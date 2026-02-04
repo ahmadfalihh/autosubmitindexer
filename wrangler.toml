@@ -1,0 +1,7 @@
+name = "web-indexer-app"
+compatibility_date = "2024-02-04"
+pages_build_output_dir = "dist"
+
+[vars]
+# These will be overridden by the dashboard environment variables in production
+# but can be set here for local dev if needed (better to use .dev.vars locally)

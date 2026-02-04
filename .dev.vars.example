@@ -1,0 +1,16 @@
+# Environment Variables for Local Development
+
+# 1. Create a file named .dev.vars in the root directory (same level as package.json)
+# 2. Paste your keys in the following format:
+
+BING_API_KEY="your_bing_api_key_here"
+
+NAVER_CLIENT_ID="your_naver_client_id"
+NAVER_CLIENT_SECRET="your_naver_secret"
+
+# 3. For Google, you must paste the ENTIRE content of your service-account.json file
+#    IT MUST BE ON A SINGLE LINE. Escape quotes if necessary, but usually standard JSON string is fine.
+#    Easiest way: Open service-account.json, minify it (remove newlines), and paste it.
+GOOGLE_SERVICE_ACCOUNT_JSON='{"type": "service_account", "project_id": "...", ...}'
+
+# WARNING: NEVER COMMIT .dev.vars TO CITOR GIT!
