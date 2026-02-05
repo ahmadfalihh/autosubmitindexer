@@ -98,8 +98,8 @@ function App() {
 
     addLog("Starting indexing process (Batch Mode)...");
 
-    // Process in batches of 50
-    const BATCH_SIZE = 50;
+    // Process in batches of 10 (Cloudflare Workers limit: 50 subrequests per invocation)
+    const BATCH_SIZE = 10;
     const batches = chunkArray(urls, BATCH_SIZE);
 
     for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
