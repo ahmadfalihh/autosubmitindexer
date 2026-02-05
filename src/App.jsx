@@ -77,6 +77,13 @@ function App() {
     }
   };
 
+  // Helper: Chunk array into batches
+  const chunkArray = (arr, size) => {
+    return Array.from({ length: Math.ceil(arr.length / size) }, (v, i) =>
+      arr.slice(i * size, i * size + size)
+    );
+  };
+
   const handleIndex = async () => {
     if (urls.length === 0) return;
     setIsIndexing(true);
@@ -89,81 +96,102 @@ function App() {
       naver: { submitted: 0, success: 0, failed: 0 }
     };
 
-    addLog("Starting indexing process...");
+    addLog("Starting indexing process (Batch Mode)...");
 
-    for (let i = 0; i < urls.length; i++) {
-      const currentUrl = urls[i].url;
-      setProgress(prev => ({ ...prev, current: i + 1 }));
-      addLog(`Processing [${i + 1}/${urls.length}]: ${currentUrl}`);
+    // Process in batches of 50
+    const BATCH_SIZE = 50;
+    const batches = chunkArray(urls, BATCH_SIZE);
 
-      const platformResults = { google: 'pending', bing: 'pending', naver: 'pending' };
+    for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+      const batchUrls = batches[batchIdx];
+      const batchUrlStrings = batchUrls.map(u => u.url);
+
+      const startIdx = batchIdx * BATCH_SIZE;
+      addLog(`Processing Batch ${batchIdx + 1}/${batches.length} (${batchUrlStrings.length} URLs)...`);
 
       try {
         const results = await Promise.allSettled([
-          submitToGoogle(currentUrl),
-          submitToBing(currentUrl),
-          submitToNaver(currentUrl)
+          submitToGoogle(batchUrlStrings),
+          submitToBing(batchUrlStrings),
+          submitToNaver(batchUrlStrings)
         ]);
 
-        // Process Google result
-        if (results[0].status === 'fulfilled' && results[0].value?.status === 'success') {
-          platformResults.google = 'success';
-          stats.google.success++;
-          addLog(`  ✓ Google: Success`, 'success');
+        // --- Process Google Results ---
+        if (results[0].status === 'fulfilled' && results[0].value?.results) {
+          results[0].value.results.forEach((res, idx) => {
+            const globalIdx = startIdx + idx;
+            if (res.status === 'success') {
+              stats.google.success++;
+              setUrls(prev => { const n = [...prev]; n[globalIdx].platforms.google = 'success'; return n; });
+            } else {
+              stats.google.failed++;
+              const msg = res.apiResponse?.error?.message || 'Failed';
+              addLog(`  ✗ Google [${batchUrlStrings[idx]}]: ${msg}`, 'warning');
+              setUrls(prev => { const n = [...prev]; n[globalIdx].platforms.google = 'failed'; return n; });
+            }
+          });
+          if (results[0].value.status === 'success') addLog(`  ✓ Google: Batch Success`, 'success');
         } else {
-          platformResults.google = 'failed';
-          stats.google.failed++;
-          addLog(`  ✗ Google: ${results[0].reason || results[0].value?.message || 'Failed'}`, 'warning');
+          // Whole batch failed
+          stats.google.failed += batchUrlStrings.length;
+          const errorMsg = results[0].reason?.message || results[0].value?.message || 'Unknown Batch Error';
+          addLog(`  ✗ Google Batch Failed: ${errorMsg}`, 'error');
+          batchUrlStrings.forEach((_, idx) => {
+            setUrls(prev => { const n = [...prev]; n[startIdx + idx].platforms.google = 'failed'; return n; });
+          });
         }
-        stats.google.submitted++;
+        stats.google.submitted += batchUrlStrings.length;
 
-        // Process Bing result
+
+        // --- Process Bing Results ---
         if (results[1].status === 'fulfilled' && results[1].value?.status === 'success') {
-          platformResults.bing = 'success';
-          stats.bing.success++;
-          addLog(`  ✓ Bing: Success`, 'success');
+          stats.bing.success += batchUrlStrings.length;
+          batchUrlStrings.forEach((_, idx) => {
+            setUrls(prev => { const n = [...prev]; n[startIdx + idx].platforms.bing = 'success'; return n; });
+          });
+          addLog(`  ✓ Bing: Batch Success`, 'success');
         } else {
-          platformResults.bing = 'failed';
-          stats.bing.failed++;
-          addLog(`  ✗ Bing: ${results[1].reason || results[1].value?.message || 'Failed'}`, 'warning');
+          stats.bing.failed += batchUrlStrings.length;
+          const errorMsg = results[1].reason?.message || results[1].value?.message || 'Failed';
+          addLog(`  ✗ Bing Batch Failed: ${errorMsg}`, 'warning');
+          batchUrlStrings.forEach((_, idx) => {
+            setUrls(prev => { const n = [...prev]; n[startIdx + idx].platforms.bing = 'failed'; return n; });
+          });
         }
-        stats.bing.submitted++;
+        stats.bing.submitted += batchUrlStrings.length;
 
-        // Process Naver result
+        // --- Process Naver Results ---
         if (results[2].status === 'fulfilled' && results[2].value?.status === 'success') {
-          platformResults.naver = 'success';
-          stats.naver.success++;
-          addLog(`  ✓ Naver: Success`, 'success');
+          stats.naver.success += batchUrlStrings.length;
+          batchUrlStrings.forEach((_, idx) => {
+            setUrls(prev => { const n = [...prev]; n[startIdx + idx].platforms.naver = 'success'; return n; });
+          });
+          addLog(`  ✓ Naver: Batch Success`, 'success');
         } else {
-          platformResults.naver = 'failed';
-          stats.naver.failed++;
-          addLog(`  ✗ Naver: ${results[2].reason || results[2].value?.message || 'Failed'}`, 'warning');
+          stats.naver.failed += batchUrlStrings.length;
+          const errorMsg = results[2].reason?.message || results[2].value?.message || 'Failed';
+          addLog(`  ✗ Naver Batch Failed: ${errorMsg}`, 'warning');
+          batchUrlStrings.forEach((_, idx) => {
+            setUrls(prev => { const n = [...prev]; n[startIdx + idx].platforms.naver = 'failed'; return n; });
+          });
         }
-        stats.naver.submitted++;
+        stats.naver.submitted += batchUrlStrings.length;
 
-        // Update URL status
-        const allSuccess = Object.values(platformResults).every(s => s === 'success');
-        const allFailed = Object.values(platformResults).every(s => s === 'failed');
-
-        setUrls(prev => {
-          const newUrls = [...prev];
-          newUrls[i].status = allSuccess ? 'success' : allFailed ? 'failed' : 'partial';
-          newUrls[i].platforms = platformResults;
-          return newUrls;
-        });
-
-        if (allSuccess) {
-          setProgress(prev => ({ ...prev, success: prev.success + 1 }));
-        } else {
-          setProgress(prev => ({ ...prev, failed: prev.failed + 1 }));
-        }
+        // Update Progress UI
+        setProgress(prev => ({
+          ...prev,
+          current: Math.min(prev.total, startIdx + batchUrlStrings.length),
+          // Rough estimation for progress bar success/fail based on overall batch success
+          success: prev.success + (results.every(r => r.status === 'fulfilled' && r.value?.status === 'success') ? batchUrlStrings.length : 0),
+          failed: prev.failed + (results.some(r => r.status === 'rejected' || r.value?.status !== 'success') ? batchUrlStrings.length : 0)
+        }));
 
       } catch (error) {
-        addLog(`  ✗ Critical Error: ${error.message}`, 'error');
+        addLog(`  ✗ Critical Batch Error: ${error.message}`, 'error');
       }
 
       setPlatformStats({ ...stats });
-      await new Promise(r => setTimeout(r, 200));
+      await new Promise(r => setTimeout(r, 1000)); // 1s delay between batches
     }
 
     setIsIndexing(false);
@@ -187,33 +215,34 @@ function App() {
     addLog('Logs copied to clipboard!', 'success');
   };
 
-  const submitToGoogle = async (url) => {
+  // Updated submit functions to accept array of URLs
+  const submitToGoogle = async (urls) => {
     const res = await fetch('/submit-google', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ urls: [url] })
+      body: JSON.stringify({ urls }) // Sending array
     });
     const data = await res.json().catch(() => ({ message: res.statusText }));
     if (!res.ok) throw new Error(`Google: ${data.message || res.statusText || 'Unknown error'}`);
     return data;
   };
 
-  const submitToBing = async (url) => {
+  const submitToBing = async (urls) => {
     const res = await fetch('/submit-bing', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ urls: [url] })
+      body: JSON.stringify({ urls }) // Sending array
     });
     const data = await res.json().catch(() => ({ message: res.statusText }));
     if (!res.ok) throw new Error(`Bing: ${data.message || res.statusText || 'Unknown error'}`);
     return data;
   };
 
-  const submitToNaver = async (url) => {
+  const submitToNaver = async (urls) => {
     const res = await fetch('/submit-naver', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ urls: [url] })
+      body: JSON.stringify({ urls }) // Sending array
     });
     const data = await res.json().catch(() => ({ message: res.statusText }));
     if (!res.ok) throw new Error(`Naver: ${data.message || res.statusText || 'Unknown error'}`);
